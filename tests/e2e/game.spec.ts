@@ -279,6 +279,9 @@ test('a newer request supersedes a slower one, and Menu cancels a load', async (
   await expect(page.locator('#hud-mode')).toHaveText('Practice · Easy · fast-easy');
   expect(await page.evaluate(() => (window as unknown as { __seen: string[] }).__seen)).toEqual(['Practice · Easy · fast-easy']);
   expect(await dbg<Dir[]>(page, 'solution')).toEqual(generate('fast-easy', 'easy').solution);
+  // The busy worker was terminated rather than left to finish the outdated board.
+  type GenStats = { spawned: number; terminated: number; cancelled: number };
+  expect(await dbg<GenStats>(page, 'genStats')).toEqual({ spawned: 2, terminated: 1, cancelled: 1 });
 
   // Start a load, then return to the menu before it completes: the title must stay.
   await page.evaluate(() => void (window as unknown as Fl).__floeline.startPractice('cancel-me', 'hard'));
@@ -286,5 +289,12 @@ test('a newer request supersedes a slower one, and Menu cancels a load', async (
   await page.waitForTimeout(800);
   await expect(page.getByRole('heading', { name: 'Floeline' })).toBeVisible();
   await expect(page.locator('#hud')).toBeHidden();
+  expect((await dbg<GenStats>(page, 'genStats')).terminated).toBe(2);
+
+  // After a cancellation, a fresh worker serves the next board.
+  await page.locator('#btn-daily').click();
+  await ready(page);
+  expect((await dbg<Load>(page, 'lastLoad'))?.viaWorker).toBe(true);
+  expect(await dbg<GenStats>(page, 'genStats')).toEqual({ spawned: 3, terminated: 2, cancelled: 2 });
   expect(errors).toEqual([]);
 });

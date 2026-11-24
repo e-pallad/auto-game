@@ -96,7 +96,7 @@ In an emergency, bypass it with `git push --no-verify`.
 
 ```
 src/core/      pure game logic: rules, BFS solver, seeded generator, daily numbering, session, share text
-src/game/      browser layer: canvas renderer, app controller, generation Web Worker + fallback client, WebAudio SFX, localStorage
+src/game/      browser layer: canvas renderer, app controller, generation Web Worker + client (cancels superseded work, main-thread fallback), WebAudio SFX, localStorage
 tests/unit/    Vitest unit tests, including a reference solver used as an equivalence oracle
 tests/e2e/     Playwright end-to-end tests
 scripts/       benchmarks, subpath static server, itch.io packager

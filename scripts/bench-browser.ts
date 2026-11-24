@@ -118,6 +118,33 @@ try {
     result.maxFrameGapMsThrottle4x = { medium: sum(gaps.medium!), hard: sum(gaps.hard!) };
   }
 
+  // Supersede latency (no throttle; CDP throttling does not reach workers): request one of the
+  // slowest known Hard boards, then immediately an Easy board; time from the second request until
+  // the Easy board is ready. Slow seeds were found by timing 400 Hard seeds in Node.
+  {
+    const slowSeeds = ['slow325', 'slow76', 'slow252', 'slow360', 'slow269'];
+    const times: number[] = [];
+    for (const [i, slow] of [...slowSeeds, ...slowSeeds, ...slowSeeds, ...slowSeeds].entries()) {
+      await page.goto(`${BASE}?debug=1&seed=warmup&d=easy`);
+      await page.waitForFunction(() => (window as unknown as { __floeline: { ready(): boolean } }).__floeline.ready());
+      await page.waitForTimeout(100);
+      times.push(
+        await page.evaluate(
+          async ([slowSeed, easySeed]) => {
+            const fl = (window as unknown as { __floeline: { ready(): boolean; startPractice(s: string, d: string): Promise<void> } }).__floeline;
+            void fl.startPractice(slowSeed!, 'hard');
+            await new Promise((r) => setTimeout(r, 5)); // let the slow request reach the worker
+            const t0 = performance.now();
+            await fl.startPractice(easySeed!, 'easy');
+            return performance.now() - t0;
+          },
+          [slow, `easy-after-${i}`],
+        ),
+      );
+    }
+    result.supersedeMs = { max: Math.max(...times), mean: times.reduce((a, b) => a + b, 0) / times.length, n: times.length };
+  }
+
   // Frame cost while idle (ripples) and while playing through a solution.
   await page.goto(`${BASE}?debug=1&seed=frames&d=medium`);
   await page.evaluate(() => (window as unknown as FL).__floeline.resetFrameStats());

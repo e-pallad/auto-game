@@ -49,7 +49,7 @@ export class App {
   /** Incremented on every load request; responses for an older token are ignored. */
   private loadToken = 0;
   private loadingTimer = 0;
-  private readonly gen = new GeneratorClient(!new URLSearchParams(location.search).has('noworker'));
+  private readonly gen = new GeneratorClient(new URLSearchParams(location.search).has('noworker') ? null : undefined);
   private readonly params = new URLSearchParams(location.search);
   private readonly debug = this.params.has('debug');
 
@@ -139,6 +139,7 @@ export class App {
 
   private cancelLoad(): void {
     this.loadToken++;
+    this.gen.cancel(); // stops the worker if it is still building the abandoned board
     if (this.loading) this.setLoading(false);
   }
 
@@ -150,7 +151,9 @@ export class App {
       mode.kind === 'daily'
         ? await this.gen.request(mode.info.seed, 'medium')
         : await this.gen.request(mode.seed, mode.difficulty);
-    if (token !== this.loadToken) return; // superseded by a newer request or by returning to the menu
+    // Superseded by a newer request or by returning to the menu. The client already resolves
+    // superseded requests to null; the token also covers main-thread (fallback) results.
+    if (!res || token !== this.loadToken) return;
     this.setLoading(false);
     const { puzzle, ...timing } = res;
     this.lastLoad = timing;
@@ -405,6 +408,7 @@ export class App {
       genMs: () => this.lastLoad?.genMs ?? null,
       lastLoad: () => this.lastLoad,
       usingWorker: () => this.gen.usingWorker,
+      genStats: () => ({ ...this.gen.stats }),
       ready: () => !this.loading && this.session !== null,
       startPractice: (seed: string, difficulty: Difficulty) => this.start({ kind: 'practice', difficulty, seed }),
       frameStats: () => this.renderer.frameStats(),

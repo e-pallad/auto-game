@@ -39,7 +39,7 @@ Dependencies, all dev-only, pinned exactly, `package-lock.json` kept in the repo
 - **M0:** Inspected the environment and researched the market. Concept chosen: Floeline (see CONCEPT.md). Considered and rejected Godot because there are no export templates.
 - **M1/M2:** `src/core` holds the rules, BFS solver, generator, daily numbering, session and share text. Unit tests cover 365 consecutive dates: all solvable, all with par 7–11, none falling back to the handcrafted board.
 - **M3/M4:** The game is playable, built with Canvas, DOM menus and WebAudio. E2E caught a real bug: rAF timestamps lagged `performance.now()`, which made animation progress negative and threw `TypeError`. Fixed by clamping progress and using a single clock. Polish pass after reviewing screenshots: share wording, practice button layout, stranded dialog layout, no hints after a win.
-- **M5:** 32 unit tests and 9 e2e tests pass (now 34 and 13 after the worker change), and typecheck is clean. E2E runs against the production build served from the subpath `/play/floeline/`, which mirrors how itch.io hosts HTML5 games. It loads the build as a top-level page, not in an iframe, and uses real key presses, touch taps, mouse swipes and clicks. A final advisor review found three gaps: swipe and click input and Copy result had no test, and the result dialog focused a hidden button on practice wins and in the stranded state. All three were fixed and tested.
+- **M5:** 32 unit tests and 9 e2e tests pass (now 38 and 13 after the worker changes), and typecheck is clean. E2E runs against the production build served from the subpath `/play/floeline/`, which mirrors how itch.io hosts HTML5 games. It loads the build as a top-level page, not in an iframe, and uses real key presses, touch taps, mouse swipes and clicks. A final advisor review found three gaps: swipe and click input and Copy result had no test, and the result dialog focused a hidden button on practice wins and in the stranded state. All three were fixed and tested.
 - **M6:** Baseline benchmark, then the improvement below.
 - **M7:** README, MARKETING.md, LICENSE, and an itch ZIP of 14 KB with 5 files.
 
@@ -119,11 +119,25 @@ About 17 ms is a single frame at 60 fps, so the page no longer stalls while gene
 - **Caveats:**
   - The `genMs*` fields in `after-worker.json` are measured inside the worker. CDP CPU throttling does not appear to apply to workers: their "4×" times match the unthrottled ones. So they don't show that a slow device generates faster. On a real phone the board still takes about as long to *arrive* as before, but the page stays responsive and shows the loading indicator.
   - The bundle grew from 38.3 KB / 13.9 KB gzipped to 45.4 KB / 16.9 KB gzipped (5 files). The generator is now included twice: once in the worker chunk, and once in the main bundle for the fallback.
-  - A request that has been superseded still runs to completion in the worker before the next one starts. Terminating and respawning the worker would avoid that, but I haven't done it.
+  - A request that has been superseded used to run to completion in the worker before the next one started. That is fixed in the third pass below.
 - **Tests added:**
   - Unit: the fallback client.
   - e2e: the worker is actually used and gives the same board as Node; the fallback works when `Worker` is deleted and when the worker script is aborted; a newer request supersedes an older one; Menu cancels a load.
   - To confirm the supersede test discriminates, I disabled the token check: the test then failed because the stale board was shown briefly.
+
+**Third improvement pass: terminate superseded work.**
+- **What changed:** when a new request arrives, or Menu cancels a load, while the worker is still busy, `GeneratorClient` terminates that worker and resolves the abandoned request to `null`. It then starts a fresh worker. A late reply from a terminated worker is ignored.
+- **Start-up:** the worker still starts eagerly when the page loads, so the first board doesn't wait for it.
+- **Tests:**
+  - Unit tests use a fake worker to cover reuse while idle, termination on supersede, cancel when idle doing nothing, ignoring late replies, and falling back on error.
+  - The e2e test checks the real counts in the browser: 2 workers started and 1 terminated after a supersede, one more termination on Menu, then a fresh worker serving the next board.
+- **New metric:** time from a superseding request until the board is ready. It is measured without throttling, because CDP throttling doesn't reach workers. Each run requests one of the five slowest Hard seeds out of 400 timed in Node, then immediately an Easy board. 20 runs:
+
+| Supersede → newest board ready | Before (`before-terminate.json`) | After (`after-terminate.json`) |
+|---|---|---|
+| mean / worst | 115.1 / 143.3 ms | 10.6 / 23.9 ms |
+
+The frame-gap metric is unchanged: Hard worst-case gap 18.3 ms. The bundle grew by about 0.6 KB raw, to 46.0 KB / 17.0 KB gzipped.
 
 ## Risks and remaining work
 

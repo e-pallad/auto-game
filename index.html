@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Floeline: a daily sliding-ice puzzle where every floe you stop on melts behind you." />
+    <meta name="theme-color" content="#0b1530" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <title>Floeline</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <main id="app" aria-label="Floeline game">
+      <header id="hud" class="hidden" aria-label="Game status">
+        <button id="btn-menu" class="icon-btn" aria-label="Back to menu" title="Menu (Esc)">☰</button>
+        <div class="hud-center">
+          <div id="hud-mode" class="hud-mode">Daily #1</div>
+          <div class="hud-stats" aria-live="polite">
+            <span>Moves <strong id="hud-moves">0</strong></span>
+            <span>Par <strong id="hud-par">0</strong></span>
+            <span>Embers <strong id="hud-embers">0/0</strong></span>
+          </div>
+        </div>
+        <button id="btn-sound" class="icon-btn" aria-label="Toggle sound" title="Sound (M)">🔊</button>
+      </header>
+
+      <div id="stage">
+        <canvas id="board" aria-label="Puzzle board" role="img"></canvas>
+        <p id="toast" class="toast" role="status" aria-live="polite"></p>
+      </div>
+
+      <footer id="controls" class="hidden">
+        <button id="btn-undo" class="pill" title="Undo (Z / Backspace)">↶ Undo</button>
+        <div class="dpad" aria-label="Move">
+          <button data-dir="up" aria-label="Slide up">▲</button>
+          <button data-dir="left" aria-label="Slide left">◀</button>
+          <button data-dir="down" aria-label="Slide down">▼</button>
+          <button data-dir="right" aria-label="Slide right">▶</button>
+        </div>
+        <button id="btn-restart" class="pill" title="Restart (R)">⟲ Restart</button>
+      </footer>
+
+      <section id="screen-title" class="screen" aria-labelledby="logo">
+        <div class="card title-card">
+          <h1 id="logo">Floeline</h1>
+          <p class="tagline">Every floe you stop on melts behind you.</p>
+          <button id="btn-daily" class="primary">Play today's puzzle</button>
+          <p id="daily-note" class="note"></p>
+          <div class="practice" role="group" aria-labelledby="practice-label">
+            <span id="practice-label" class="note">Practice, unlimited boards</span>
+            <div class="row">
+              <button class="secondary" data-practice="easy">Easy</button>
+              <button class="secondary" data-practice="medium">Medium</button>
+              <button class="secondary" data-practice="hard">Hard</button>
+            </div>
+          </div>
+          <button id="btn-howto" class="link">How to play</button>
+          <div id="stats" class="stats" aria-label="Your stats"></div>
+          <fieldset class="settings">
+            <legend>Settings</legend>
+            <label><input type="checkbox" id="opt-sound" /> Sound</label>
+            <label><input type="checkbox" id="opt-hints" /> Landing hints</label>
+            <label><input type="checkbox" id="opt-motion" /> Reduce motion</label>
+          </fieldset>
+        </div>
+      </section>
+
+      <section id="screen-howto" class="screen hidden" role="dialog" aria-modal="true" aria-labelledby="howto-h">
+        <div class="card">
+          <h2 id="howto-h">How to play</h2>
+          <ol class="howto">
+            <li><span class="glyph player"></span> You <b>slide</b> until a rock, water, or the edge stops you.</li>
+            <li><span class="glyph crack"></span> The floe you're standing on is cracked: it <b>melts when you leave</b>, becoming water you'll bump into later.</li>
+            <li><span class="glyph ember"></span> Pass over every <b>ember</b>, then stop on the <span class="glyph dock"></span> <b>dock</b>. The dock stops slides and never melts.</li>
+            <li>Match the solver's <b>par</b>. Stuck? <b>Undo</b> or <b>Restart</b> anytime.</li>
+          </ol>
+          <p class="note">Keys: arrows / WASD slide · Z or Backspace undo · R restart · Esc menu. Touch: swipe, tap a side of the board, or use the pad.</p>
+          <button id="btn-howto-close" class="primary">Got it</button>
+        </div>
+      </section>
+
+      <section id="screen-result" class="screen hidden" role="dialog" aria-modal="true" aria-labelledby="result-h">
+        <div class="card">
+          <h2 id="result-h">Ashore!</h2>
+          <p id="result-body"></p>
+          <pre id="result-share" class="share" aria-label="Share text"></pre>
+          <div class="row">
+            <button id="btn-share" class="primary">Copy result</button>
+            <button id="btn-undo-result" class="primary">↶ Undo last move</button>
+            <button id="btn-again" class="secondary">Play again</button>
+          </div>
+          <div class="row">
+            <button id="btn-next" class="secondary">New practice board</button>
+            <button id="btn-result-menu" class="link">Menu</button>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

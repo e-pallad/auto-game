@@ -34,12 +34,13 @@ npm run package:itch   # release/floeline-web.zip, ready for itch.io (index.html
 npm run typecheck      # strict TypeScript, no emit
 npm test               # unit tests (Vitest), including 365 consecutive daily puzzles checked for solvability and par band
 npm run test:e2e       # builds, serves dist/ from a subpath like itch.io does, then plays the game in headless Chromium
+npm run screenshots    # same e2e run, but writes docs/screenshots/ (otherwise test-results/screenshots/)
 npm run check          # all of the above
 npm run bench          # Node benchmark for puzzle generation (365 seeds per difficulty)
 npm run build && npm run bench:browser -- <label>   # browser benchmark, writes docs/benchmarks/<label>.json
 ```
 
-The e2e tests (13 of them) serve the production build from the subpath `/play/floeline/`, as itch.io does. They load it as a top-level page; I did not test it inside an iframe. The tests press real keys, tap the on-screen pad, swipe with a mouse and click beside the player. They solve a daily puzzle, undo, get stranded on purpose, and restart. They also check that results and settings persist, that **Copy result** puts the share line on the clipboard, and that the select-text fallback works when the clipboard API is denied. Screenshots are saved to `docs/screenshots/`.
+The e2e tests (13 of them) serve the production build from the subpath `/play/floeline/`, as itch.io does. They load it as a top-level page; I did not test it inside an iframe. The tests press real keys, tap the on-screen pad, swipe with a mouse and click beside the player. They solve a daily puzzle, undo, get stranded on purpose, and restart. They also check that results and settings persist, that **Copy result** puts the share line on the clipboard, and that the select-text fallback works when the clipboard API is denied. Screenshots go to the gitignored `test-results/screenshots/`, so ordinary runs (and the pre-push hook) leave the committed images alone. To refresh `docs/screenshots/` on purpose, run `npm run screenshots` and commit the result.
 
 ### Self-review and pre-push hook
 

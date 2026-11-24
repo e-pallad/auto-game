@@ -2,7 +2,12 @@ import { type Page, expect, test } from '@playwright/test';
 import { generate } from '../../src/core/generator.ts';
 import { type Dir, type GameState, type Level, DIRS, initialState, isStranded, move } from '../../src/core/rules.ts';
 
-const SHOTS = 'docs/screenshots';
+/**
+ * Screenshots go to the gitignored test-results/ folder on normal runs, so e2e runs (including the
+ * pre-push hook) don't rewrite the committed images. `npm run screenshots` sets UPDATE_SCREENSHOTS=1
+ * to refresh docs/screenshots/ on purpose.
+ */
+const SHOTS = process.env.UPDATE_SCREENSHOTS === '1' ? 'docs/screenshots' : 'test-results/screenshots';
 const KEY: Record<Dir, string> = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' };
 
 function watchErrors(page: Page): string[] {

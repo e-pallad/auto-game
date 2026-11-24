@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "npm run build && playwright test",
+    "screenshots": "npm run build && UPDATE_SCREENSHOTS=1 playwright test",
     "bench": "node --experimental-strip-types scripts/bench-generator.ts",
     "package:itch": "node scripts/package-itch.mjs",
     "check": "npm run typecheck && npm run test && npm run test:e2e",

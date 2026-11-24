@@ -51,12 +51,14 @@ npm run review:full     # branch review plus build and e2e tests
 
 `scripts/review.sh` **blocks** on: likely secrets (AWS keys, private keys, GitHub/Slack/`sk-` tokens, hard-coded `password=`/`token=` values), forbidden files (`.env`, `credentials.json`, `.claude/settings.local.json`, keys), committed build output, conflict markers, `test.only`, `debugger`, files over 5 MB, and typecheck or test failures. It **warns** on `console.log` in `src/`, new TODO/FIXME comments, and files over 1 MB.
 
-The pre-push hook lives in `.githooks/pre-push`. `npm ci` and `npm install` enable it by setting `git config core.hooksPath .githooks` through the `prepare` script. The hook runs `scripts/pre-push-check.sh`, which:
+The pre-push hook lives in `.githooks/pre-push`. `npm ci` and `npm install` enable it by setting `git config core.hooksPath .githooks` through the `prepare` script. The hook runs `scripts/pre-push-check.sh`. That script looks at each ref git is actually pushing, judged by its **remote** branch name, not the branch you have checked out:
 
-- rejects branch names that don't start with `feature/`, `fix/` or `chore/`, including any `claude/` branch;
-- allows `main`/`master` with a notice;
-- skips pushes that only delete branches;
-- otherwise runs `npm run review:full`.
+- It rejects branch names that don't start with `feature/`, `fix/` or `chore/`, including any `claude/` branch. If any ref in the push fails, the whole push is blocked.
+- It allows `main`/`master` with a notice.
+- It never blocks or reviews deletions, tags, or branches that are already up to date on the remote.
+- For every new commit being pushed, it runs the full review (`scripts/review.sh branch --full --ref <commit>`). If that commit isn't the one you have checked out, for example `git push origin feature/x` from `main`, the review runs in a temporary git worktree at that commit. The typecheck and tests therefore run on exactly what is being pushed, and the worktree is removed afterwards.
+
+Run by hand (`bash scripts/pre-push-check.sh`), it checks the current branch as if you were pushing it.
 
 In an emergency, bypass it with `git push --no-verify`.
 

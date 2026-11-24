@@ -4,6 +4,11 @@
 #   scripts/review.sh staged            # staged changes (npm run review)
 #   scripts/review.sh branch            # all commits on this branch vs base (npm run review:branch)
 #   scripts/review.sh <mode> --full     # also build and run the Playwright e2e suite
+#   scripts/review.sh branch --ref <commit> [--name <branch>]
+#                                       # review a specific commit (used by the pre-push hook).
+#                                       # If it isn't the checked-out HEAD, the review runs in a
+#                                       # temporary git worktree at that commit, so typecheck and
+#                                       # tests run on exactly what is being pushed.
 #
 # Base branch for "branch" mode: $REVIEW_BASE, else the first that exists of
 # origin/HEAD, master, main, origin/master, origin/main. If none exists (e.g. the
@@ -14,12 +19,51 @@
 # Warnings only: console.log in src/, new TODO/FIXME, files over 1 MB.
 set -uo pipefail
 
-mode="${1:-staged}"
+usage() {
+  echo "usage: $0 [staged|branch] [--full] [--ref <commit>] [--name <branch>]" >&2
+  exit 2
+}
+mode=staged
 full=0
-[[ "${2:-}" == "--full" || "${1:-}" == "--full" ]] && full=1
-[[ "$mode" == "--full" ]] && mode="staged"
+ref=""
+name=""
+while (($# > 0)); do
+  case "$1" in
+    staged | branch) mode="$1" ;;
+    --full) full=1 ;;
+    --ref) [[ $# -ge 2 ]] || usage; ref="$2"; shift ;;
+    --name) [[ $# -ge 2 ]] || usage; name="$2"; shift ;;
+    *) usage ;;
+  esac
+  shift
+done
+if [[ -n "$ref" && "$mode" != branch ]]; then
+  echo "--ref only applies to branch mode" >&2
+  exit 2
+fi
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
+
+# Reviewing a commit other than HEAD: re-run this script inside a temporary worktree at it.
+if [[ -n "$ref" ]]; then
+  target=$(git rev-parse --verify -q "$ref^{commit}") || { echo "review: unknown commit '$ref'" >&2; exit 2; }
+  if [[ "$target" != "$(git rev-parse HEAD)" ]]; then
+    self="$(pwd)/scripts/review.sh"
+    [[ -f "$self" ]] || self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+    wt=$(mktemp -d "${TMPDIR:-/tmp}/review-wt.XXXXXX")
+    rmdir "$wt"
+    git worktree add -q --detach "$wt" "$target" || exit 1
+    trap 'git worktree remove --force "$wt" >/dev/null 2>&1; rm -rf "$wt"' EXIT
+    [[ -d node_modules ]] && ln -s "$(pwd)/node_modules" "$wt/node_modules"
+    echo "Reviewing ${name:-$target} at ${target:0:7} in a temporary worktree"
+    args=(branch --name "${name:-${target:0:7}}")
+    ((full)) && args+=(--full)
+    (cd "$wt" && bash "$self" "${args[@]}")
+    exit $?
+  fi
+fi
+label="${name:-$(git branch --show-current)}"
+label="${label:-$(git rev-parse --short HEAD)}"
 
 red=$'\e[31m'; yellow=$'\e[33m'; green=$'\e[32m'; bold=$'\e[1m'; reset=$'\e[0m'
 [[ -t 1 ]] || { red=; yellow=; green=; bold=; reset=; }
@@ -45,16 +89,12 @@ case "$mode" in
     fi
     if [[ -n "$base_ref" ]] && git rev-parse --verify -q "$base_ref^{commit}" >/dev/null; then
       base=$(git merge-base "$base_ref" HEAD)
-      range_desc="branch $(git branch --show-current) vs $base_ref"
+      range_desc="branch $label vs $base_ref"
     else
       base="$empty_tree"
-      range_desc="entire history of $(git branch --show-current) (no base branch found)"
+      range_desc="entire history of $label (no base branch found)"
     fi
     diff_args=("$base" HEAD)
-    ;;
-  *)
-    echo "usage: $0 staged|branch [--full]" >&2
-    exit 2
     ;;
 esac
 

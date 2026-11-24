@@ -41,6 +41,25 @@ npm run build && npm run bench:browser -- <label>   # browser benchmark, writes 
 
 The e2e tests (9 of them) serve the production build from the subpath `/play/floeline/`, as itch.io does. They load it as a top-level page; I did not test it inside an iframe. The tests press real keys, tap the on-screen pad, swipe with a mouse and click beside the player. They solve a daily puzzle, undo, get stranded on purpose, and restart. They also check that results and settings persist, that **Copy result** puts the share line on the clipboard, and that the select-text fallback works when the clipboard API is denied. Screenshots are saved to `docs/screenshots/`.
 
+### Self-review and pre-push hook
+
+```bash
+npm run review          # staged changes: static checks + typecheck + unit tests
+npm run review:branch   # every change on this branch vs its base (origin/HEAD, master or main)
+npm run review:full     # branch review plus build and e2e tests
+```
+
+`scripts/review.sh` **blocks** on: likely secrets (AWS keys, private keys, GitHub/Slack/`sk-` tokens, hard-coded `password=`/`token=` values), forbidden files (`.env`, `credentials.json`, `.claude/settings.local.json`, keys), committed build output, conflict markers, `test.only`, `debugger`, files over 5 MB, and typecheck or test failures. It **warns** on `console.log` in `src/`, new TODO/FIXME comments, and files over 1 MB.
+
+The pre-push hook lives in `.githooks/pre-push`. `npm ci` and `npm install` enable it by setting `git config core.hooksPath .githooks` through the `prepare` script. The hook runs `scripts/pre-push-check.sh`, which:
+
+- rejects branch names that don't start with `feature/`, `fix/` or `chore/`, including any `claude/` branch;
+- allows `main`/`master` with a notice;
+- skips pushes that only delete branches;
+- otherwise runs `npm run review:full`.
+
+In an emergency, bypass it with `git push --no-verify`.
+
 ### Manual check (about 3 minutes; covers what automation here can't)
 
 1. In WSL, run `npm run build && npm run preview`, then open http://localhost:4173 in a Windows browser (Chrome, Edge or Firefox).

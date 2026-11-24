@@ -15,7 +15,11 @@
     "bench": "node --experimental-strip-types scripts/bench-generator.ts",
     "package:itch": "node scripts/package-itch.mjs",
     "check": "npm run typecheck && npm run test && npm run test:e2e",
-    "bench:browser": "node --experimental-strip-types scripts/bench-browser.ts"
+    "bench:browser": "node --experimental-strip-types scripts/bench-browser.ts",
+    "review": "bash scripts/review.sh staged",
+    "review:branch": "bash scripts/review.sh branch",
+    "review:full": "bash scripts/review.sh branch --full",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",

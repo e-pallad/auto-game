@@ -111,5 +111,5 @@ The par distributions are identical before and after: easy mean 6.0, medium 9.1,
 | Timezone differences in daily puzzles | Documented; same approach as Wordle |
 | Share line has no URL | Add one once a permanent URL exists (`src/core/share.ts`) |
 | No formatter or linter configured | The strict TypeScript compiler is the static check. Prettier or ESLint can be added if wanted |
-| The `npm run review` / `review:branch` scripts and `scripts/pre-push-check.sh` from the user's global CLAUDE.md do not exist in this repo | Needs a decision from the user. Nothing has been committed or pushed |
+| Self-review scripts and pre-push hook | ✅ Added: `npm run review`, `review:branch` and `review:full`, plus `.githooks/pre-push` → `scripts/pre-push-check.sh`. Tested by staging a planted AWS-style key, `test.only`, `debugger`, `.env`, conflict markers and `console.log` in a scratch clone: all were caught. A real `git push` to a local bare remote ran the full suite. Branch-name and delete-only cases checked. shellcheck is not installed, so only `bash -n` was run |
 | Not tested in Firefox or Safari | Run `npx playwright install firefox webkit` (a download) and add projects to the config |

@@ -4,6 +4,9 @@
  * Reports: bundle size, load timing, in-browser puzzle generation time (normal and 4x CPU
  * throttle as a rough low-end-phone proxy), draw() CPU cost per frame, JS heap.
  * Headless Chromium uses software rendering here, so numbers are relative, not absolute.
+ * genMs is measured where generation runs. Since boards are generated in a Web Worker, and
+ * CDP CPU throttling does not appear to slow workers, genMsThrottle4x understates slow-device
+ * generation time. maxFrameGapMsThrottle4x (main-thread responsiveness) is the metric to watch.
  */
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
@@ -72,6 +75,48 @@ try {
   }
   result.genMs = await genTimes(1);
   result.genMsThrottle4x = await genTimes(4);
+
+  // Main-thread blocking while a board loads: the largest gap between animation frames,
+  // measured by an rAF monitor independent of the game, at 4x CPU throttle.
+  {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    const gaps: Record<string, number[]> = { medium: [], hard: [] };
+    for (const diff of ['medium', 'hard'] as const) {
+      for (let i = 0; i < 20; i++) {
+        await page.goto(`${BASE}?debug=1&seed=warmup&d=easy`);
+        await page.waitForFunction(() => (window as unknown as { __floeline: { ready(): boolean } }).__floeline.ready());
+        await page.waitForTimeout(150);
+        const gap = await page.evaluate(
+          async ([seed, d]) => {
+            const fl = (window as unknown as { __floeline: { ready(): boolean; startPractice(s: string, d: string): void } }).__floeline;
+            let max = 0;
+            let last = performance.now();
+            let on = true;
+            const tick = () => {
+              const now = performance.now();
+              max = Math.max(max, now - last);
+              last = now;
+              if (on) requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+            await new Promise((r) => setTimeout(r, 100));
+            max = 0; // ignore warm-up frames
+            fl.startPractice(seed!, d!);
+            while (!fl.ready()) await new Promise((r) => setTimeout(r, 5));
+            await new Promise((r) => setTimeout(r, 100));
+            on = false;
+            return max;
+          },
+          [`bench${i}`, diff],
+        );
+        gaps[diff]!.push(gap);
+      }
+    }
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+    const sum = (xs: number[]) => ({ max: Math.max(...xs), mean: xs.reduce((a, b) => a + b, 0) / xs.length, n: xs.length });
+    result.maxFrameGapMsThrottle4x = { medium: sum(gaps.medium!), hard: sum(gaps.hard!) };
+  }
 
   // Frame cost while idle (ripples) and while playing through a solution.
   await page.goto(`${BASE}?debug=1&seed=frames&d=medium`);

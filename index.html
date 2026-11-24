@@ -24,9 +24,10 @@
         <button id="btn-sound" class="icon-btn" aria-label="Toggle sound" title="Sound (M)">🔊</button>
       </header>
 
-      <div id="stage">
+      <div id="stage" aria-busy="false">
         <canvas id="board" aria-label="Puzzle board" role="img"></canvas>
         <p id="toast" class="toast" role="status" aria-live="polite"></p>
+        <p id="loading" class="loading hidden" role="status">Freezing the lake…</p>
       </div>
 
       <footer id="controls" class="hidden">

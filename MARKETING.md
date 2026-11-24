@@ -35,7 +35,7 @@ A daily sliding-ice puzzle. Every floe you stop on melts behind you. Collect the
 - ♾️ **Unlimited practice** in three sizes (6×6, 7×7, 8×8).
 - ↶ **Unlimited undo and restart,** so you can experiment.
 - ⌨️ 📱 **Keyboard, swipe, tap or on-screen pad.** Reduced-motion mode, shapes that don't rely on colour, optional landing hints.
-- 🪶 **Tiny download:** about 38 KB in total (about 14 KB gzipped). It loads instantly.
+- 🪶 **Tiny download:** about 45 KB in total (about 17 KB gzipped). It loads instantly.
 
 **Call to action:** *Play today's Floeline in your browser. It takes about three minutes, and your share line is waiting.*
 

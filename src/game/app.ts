@@ -1,9 +1,10 @@
 import { type DailyInfo, dailyInfo } from '../core/daily.ts';
-import { type Difficulty, type Puzzle, generate } from '../core/generator.ts';
+import type { Difficulty, Puzzle } from '../core/generator.ts';
 import type { Dir } from '../core/rules.ts';
 import { Session } from '../core/session.ts';
 import { shareText } from '../core/share.ts';
 import { Audio } from './audio.ts';
+import { type GenResult, GeneratorClient } from './generator-client.ts';
 import { Renderer } from './render.ts';
 import { type SaveData, computeStats, load, save } from './storage.ts';
 
@@ -43,7 +44,12 @@ export class App {
   private mode: Mode | null = null;
   private outcomeTimer = 0;
   private toastTimer = 0;
-  private lastGenMs = 0;
+  private lastLoad: Omit<GenResult, 'puzzle'> | null = null;
+  private loading = false;
+  /** Incremented on every load request; responses for an older token are ignored. */
+  private loadToken = 0;
+  private loadingTimer = 0;
+  private readonly gen = new GeneratorClient(!new URLSearchParams(location.search).has('noworker'));
   private readonly params = new URLSearchParams(location.search);
   private readonly debug = this.params.has('debug');
 
@@ -56,7 +62,7 @@ export class App {
     if (seed) {
       const d = this.params.get('d');
       const difficulty: Difficulty = d === 'easy' || d === 'hard' ? d : 'medium';
-      this.start({ kind: 'practice', difficulty, seed });
+      void this.start({ kind: 'practice', difficulty, seed });
     }
     if (!this.data.settings.seenHowTo && !seed) this.showHowTo();
     // Use one clock (performance.now) for input and drawing: rAF timestamps can lag behind it.
@@ -93,6 +99,7 @@ export class App {
 
   private showTitle(): void {
     window.clearTimeout(this.outcomeTimer);
+    this.cancelLoad();
     this.session = null;
     const info = this.today();
     const done = this.data.daily[info.dateKey];
@@ -121,12 +128,32 @@ export class App {
 
   // ---------- game flow ----------
 
-  start(mode: Mode): void {
+  private setLoading(on: boolean): void {
+    this.loading = on;
+    window.clearTimeout(this.loadingTimer);
+    $('stage').setAttribute('aria-busy', String(on));
+    // Only show the indicator if loading is noticeable, to avoid a flash on fast devices.
+    if (on) this.loadingTimer = window.setTimeout(() => $('loading').classList.remove('hidden'), 150);
+    else $('loading').classList.add('hidden');
+  }
+
+  private cancelLoad(): void {
+    this.loadToken++;
+    if (this.loading) this.setLoading(false);
+  }
+
+  async start(mode: Mode): Promise<void> {
     window.clearTimeout(this.outcomeTimer);
-    const t0 = performance.now();
-    const puzzle =
-      mode.kind === 'daily' ? generate(mode.info.seed, 'medium') : generate(mode.seed, mode.difficulty);
-    this.lastGenMs = performance.now() - t0;
+    const token = ++this.loadToken;
+    this.setLoading(true);
+    const res =
+      mode.kind === 'daily'
+        ? await this.gen.request(mode.info.seed, 'medium')
+        : await this.gen.request(mode.seed, mode.difficulty);
+    if (token !== this.loadToken) return; // superseded by a newer request or by returning to the menu
+    this.setLoading(false);
+    const { puzzle, ...timing } = res;
+    this.lastLoad = timing;
     this.mode = mode;
     this.puzzle = puzzle;
     this.session = new Session(puzzle.level, puzzle.par);
@@ -143,6 +170,7 @@ export class App {
 
   private input(dir: Dir): void {
     this.audio.unlock();
+    if (this.loading) return;
     const s = this.session;
     if (!s || !$('screen-title').classList.contains('hidden') || !$('screen-howto').classList.contains('hidden')) return;
     if (!$('screen-result').classList.contains('hidden')) return;
@@ -170,7 +198,7 @@ export class App {
   }
 
   private undo(): void {
-    if (!this.session) return;
+    if (!this.session || this.loading) return;
     window.clearTimeout(this.outcomeTimer);
     if (this.session.undo()) {
       this.audio.play('undo');
@@ -181,7 +209,7 @@ export class App {
   }
 
   private restart(): void {
-    if (!this.session) return;
+    if (!this.session || this.loading) return;
     window.clearTimeout(this.outcomeTimer);
     this.session.restart();
     this.audio.play('undo');
@@ -290,12 +318,12 @@ export class App {
   private bind(): void {
     $('btn-daily').addEventListener('click', () => {
       this.audio.unlock();
-      this.start({ kind: 'daily', info: this.today() });
+      void this.start({ kind: 'daily', info: this.today() });
     });
     document.querySelectorAll<HTMLButtonElement>('[data-practice]').forEach((b) =>
       b.addEventListener('click', () => {
         this.audio.unlock();
-        this.start({ kind: 'practice', difficulty: b.dataset.practice as Difficulty, seed: randomSeed() });
+        void this.start({ kind: 'practice', difficulty: b.dataset.practice as Difficulty, seed: randomSeed() });
       }),
     );
     $('btn-howto').addEventListener('click', () => this.showHowTo());
@@ -307,7 +335,7 @@ export class App {
     $('btn-restart').addEventListener('click', () => this.restart());
     $('btn-again').addEventListener('click', () => this.restart());
     $('btn-next').addEventListener('click', () => {
-      if (this.mode?.kind === 'practice') this.start({ kind: 'practice', difficulty: this.mode.difficulty, seed: randomSeed() });
+      if (this.mode?.kind === 'practice') void this.start({ kind: 'practice', difficulty: this.mode.difficulty, seed: randomSeed() });
     });
     $('btn-share').addEventListener('click', () => void this.share());
     $('btn-sound').addEventListener('click', () => {
@@ -374,7 +402,11 @@ export class App {
       status: () => this.session?.status ?? null,
       moves: () => this.session?.moves ?? null,
       pos: () => this.session?.state.pos ?? null,
-      genMs: () => this.lastGenMs,
+      genMs: () => this.lastLoad?.genMs ?? null,
+      lastLoad: () => this.lastLoad,
+      usingWorker: () => this.gen.usingWorker,
+      ready: () => !this.loading && this.session !== null,
+      startPractice: (seed: string, difficulty: Difficulty) => this.start({ kind: 'practice', difficulty, seed }),
       frameStats: () => this.renderer.frameStats(),
       resetFrameStats: () => {
         this.renderer.frameTimes = [];

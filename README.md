@@ -39,7 +39,7 @@ npm run bench          # Node benchmark for puzzle generation (365 seeds per dif
 npm run build && npm run bench:browser -- <label>   # browser benchmark, writes docs/benchmarks/<label>.json
 ```
 
-The e2e tests (9 of them) serve the production build from the subpath `/play/floeline/`, as itch.io does. They load it as a top-level page; I did not test it inside an iframe. The tests press real keys, tap the on-screen pad, swipe with a mouse and click beside the player. They solve a daily puzzle, undo, get stranded on purpose, and restart. They also check that results and settings persist, that **Copy result** puts the share line on the clipboard, and that the select-text fallback works when the clipboard API is denied. Screenshots are saved to `docs/screenshots/`.
+The e2e tests (13 of them) serve the production build from the subpath `/play/floeline/`, as itch.io does. They load it as a top-level page; I did not test it inside an iframe. The tests press real keys, tap the on-screen pad, swipe with a mouse and click beside the player. They solve a daily puzzle, undo, get stranded on purpose, and restart. They also check that results and settings persist, that **Copy result** puts the share line on the clipboard, and that the select-text fallback works when the clipboard API is denied. Screenshots are saved to `docs/screenshots/`.
 
 ### Self-review and pre-push hook
 
@@ -96,7 +96,7 @@ In an emergency, bypass it with `git push --no-verify`.
 
 ```
 src/core/      pure game logic: rules, BFS solver, seeded generator, daily numbering, session, share text
-src/game/      browser layer: canvas renderer, app controller, WebAudio SFX, localStorage
+src/game/      browser layer: canvas renderer, app controller, generation Web Worker + fallback client, WebAudio SFX, localStorage
 tests/unit/    Vitest unit tests, including a reference solver used as an equivalence oracle
 tests/e2e/     Playwright end-to-end tests
 scripts/       benchmarks, subpath static server, itch.io packager
@@ -111,7 +111,7 @@ All visuals are drawn in code with Canvas 2D, and all sounds are synthesized at 
 
 - **Daily puzzles depend on local date.** Puzzles are keyed to the player's local date, so players in different timezones get a new board at different times.
 - **Stats live in one browser.** They are kept in `localStorage`, so there is no cross-device sync. If storage is blocked, the game still plays but nothing is saved.
-- **Hard boards can briefly freeze slow devices.** Generation runs on the main thread. The worst Hard board measured about 0.5 s under 4× CPU throttling. Daily and Easy boards are much faster (see `PLAN.md`).
+- **Hard boards can take a moment to appear on slow devices.** Boards are generated in a Web Worker, so the page keeps animating and shows a "Freezing the lake…" indicator; the Hard worst case still takes about 0.5 s to arrive on a slow device. Without Worker support the game generates on the main thread instead (see `PLAN.md`).
 - **Puzzles have not been playtested by humans.** Difficulty is tuned only by solver metrics (a par band and a minimum number of dead ends).
 - **Sound was not verified by ear.** I can't hear audio from WSL. The WebAudio code runs without errors in headless Chromium.
 - **Visuals were checked only in headless Chromium.** I have not checked them in Firefox or Safari.

@@ -18,6 +18,11 @@ async function dbg<T>(page: Page, fn: string): Promise<T> {
   return page.evaluate((f) => (window as unknown as { __floeline: Record<string, () => unknown> }).__floeline[f]!(), fn) as Promise<T>;
 }
 
+/** Wait until the board for the current request has been generated (worker is async). */
+async function ready(page: Page): Promise<void> {
+  await page.waitForFunction(() => (window as unknown as { __floeline: { ready(): boolean } }).__floeline.ready());
+}
+
 /** Depth-first search for a move sequence that ends stranded. */
 function findStranding(level: Level, s: GameState = initialState(level), depth = 0): Dir[] | null {
   if (depth > 0 && isStranded(level, s)) return [];
@@ -48,6 +53,7 @@ test('daily: solve with real key presses, share, restart, persist', async ({ pag
   await page.goto('index.html?debug=1&date=2026-11-24');
   await page.getByRole('button', { name: 'Got it' }).click();
   await page.locator('#btn-daily').click();
+  await ready(page);
   await expect(page.locator('#hud-mode')).toHaveText('Daily #1');
 
   const solution = await dbg<Dir[]>(page, 'solution');
@@ -95,6 +101,7 @@ test('practice: getting stranded shows the lose state and undo recovers', async 
   const strand = findStranding(p.level);
   expect(strand, 'test board should allow a stranding').not.toBeNull();
   await page.goto(`index.html?debug=1&seed=${seed}&d=easy`);
+  await ready(page);
   await expect(page.locator('#hud-mode')).toContainText('Practice · Easy');
   for (const d of strand!) await page.keyboard.press(KEY[d]);
   await expect(page.getByRole('heading', { name: 'Stranded' })).toBeVisible();
@@ -108,6 +115,7 @@ test('practice: getting stranded shows the lose state and undo recovers', async 
   await expect(page.getByRole('heading', { name: /Ashore/ })).toBeVisible();
   await expect(page.getByRole('button', { name: 'New practice board' })).toBeVisible();
   await page.getByRole('button', { name: 'New practice board' }).click();
+  await ready(page);
   await expect(page.locator('#hud-moves')).toHaveText('0');
   expect(errors).toEqual([]);
 });
@@ -118,6 +126,7 @@ test('mobile: on-screen pad solves a board', async ({ browser }) => {
   const errors = watchErrors(page);
   const seed = 'mobile-1';
   await page.goto(`index.html?debug=1&seed=${seed}&d=easy`);
+  await ready(page);
   const sol = generate(seed, 'easy').solution;
   for (const d of sol) await page.locator(`[data-dir="${d}"]`).tap();
   await expect(page.getByRole('heading', { name: /Ashore/ })).toBeVisible();
@@ -143,6 +152,7 @@ test('mouse swipe and click-beside-player move the player; result dialog focus',
   const seed = 'pointer-1';
   const p = generate(seed, 'easy');
   await page.goto(`index.html?debug=1&seed=${seed}&d=easy`);
+  await ready(page);
   const box = (await page.locator('#board').boundingBox())!;
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
@@ -178,6 +188,7 @@ test('Copy result writes the share line to the clipboard', async ({ page, contex
   await page.goto('index.html?debug=1&date=2026-11-25');
   await page.getByRole('button', { name: 'Got it' }).click();
   await page.locator('#btn-daily').click();
+  await ready(page);
   for (const d of await dbg<Dir[]>(page, 'solution')) await page.keyboard.press(KEY[d]);
   await expect(page.locator('#btn-share')).toBeFocused();
   await page.locator('#btn-share').click();
@@ -195,6 +206,7 @@ test('Copy result falls back to selecting the text when the clipboard API is den
   await page.goto('index.html?debug=1&date=2026-11-26');
   await page.getByRole('button', { name: 'Got it' }).click();
   await page.locator('#btn-daily').click();
+  await ready(page);
   for (const d of await dbg<Dir[]>(page, 'solution')) await page.keyboard.press(KEY[d]);
   await page.locator('#btn-share').click();
   await expect(page.locator('#toast')).toHaveText('Select and copy the text above');
@@ -206,7 +218,73 @@ test('stranded dialog focuses Undo', async ({ page }) => {
   const seed = 'e2e-strand';
   const strand = findStranding(generate(seed, 'easy').level)!;
   await page.goto(`index.html?debug=1&seed=${seed}&d=easy`);
+  await ready(page);
   for (const d of strand) await page.keyboard.press(KEY[d]);
   await expect(page.getByRole('heading', { name: 'Stranded' })).toBeVisible();
   await expect(page.locator('#btn-undo-result')).toBeFocused();
+});
+
+type Load = { viaWorker: boolean; genMs: number; roundTripMs: number } | null;
+
+test('boards are generated in a Web Worker', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto('index.html?debug=1&seed=worker-1&d=hard');
+  await ready(page);
+  expect(await dbg<boolean>(page, 'usingWorker')).toBe(true);
+  const load = await dbg<Load>(page, 'lastLoad');
+  expect(load?.viaWorker).toBe(true);
+  // Same deterministic board as Node generates.
+  expect(await dbg<Dir[]>(page, 'solution')).toEqual(generate('worker-1', 'hard').solution);
+  expect(errors).toEqual([]);
+});
+
+test('falls back to main-thread generation when workers are unavailable', async ({ page }) => {
+  await page.addInitScript(() => {
+    delete (window as unknown as { Worker?: unknown }).Worker;
+  });
+  await page.goto('index.html?debug=1&seed=noworker-1&d=easy');
+  await ready(page);
+  expect(await dbg<boolean>(page, 'usingWorker')).toBe(false);
+  expect((await dbg<Load>(page, 'lastLoad'))?.viaWorker).toBe(false);
+  for (const d of generate('noworker-1', 'easy').solution) await page.keyboard.press(KEY[d]);
+  await expect(page.getByRole('heading', { name: /Ashore/ })).toBeVisible();
+});
+
+test('falls back when the worker script fails to load', async ({ page }) => {
+  await page.route('**/gen.worker*', (route) => route.abort());
+  await page.goto('index.html?debug=1&seed=broken-worker&d=medium');
+  await ready(page);
+  expect((await dbg<Load>(page, 'lastLoad'))?.viaWorker).toBe(false);
+  expect(await dbg<Dir[]>(page, 'solution')).toEqual(generate('broken-worker', 'medium').solution);
+});
+
+test('a newer request supersedes a slower one, and Menu cancels a load', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto('index.html?debug=1');
+  await page.getByRole('button', { name: 'Got it' }).click();
+  type Fl = { __floeline: { startPractice(s: string, d: string): Promise<void> } };
+  // Fire a hard request then an easy one immediately; the easy one must win even if hard resolves later.
+  // Record every label the HUD ever shows, so a briefly-displayed stale board is caught.
+  await page.evaluate(() => {
+    const seen: string[] = [];
+    (window as unknown as { __seen: string[] }).__seen = seen;
+    const el = document.getElementById('hud-mode')!;
+    new MutationObserver(() => seen.push(el.textContent ?? '')).observe(el, { childList: true, characterData: true, subtree: true });
+    const fl = (window as unknown as Fl).__floeline;
+    void fl.startPractice('slow-hard', 'hard');
+    void fl.startPractice('fast-easy', 'easy');
+  });
+  await ready(page);
+  await page.waitForTimeout(800);
+  await expect(page.locator('#hud-mode')).toHaveText('Practice · Easy · fast-easy');
+  expect(await page.evaluate(() => (window as unknown as { __seen: string[] }).__seen)).toEqual(['Practice · Easy · fast-easy']);
+  expect(await dbg<Dir[]>(page, 'solution')).toEqual(generate('fast-easy', 'easy').solution);
+
+  // Start a load, then return to the menu before it completes: the title must stay.
+  await page.evaluate(() => void (window as unknown as Fl).__floeline.startPractice('cancel-me', 'hard'));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(800);
+  await expect(page.getByRole('heading', { name: 'Floeline' })).toBeVisible();
+  await expect(page.locator('#hud')).toBeHidden();
+  expect(errors).toEqual([]);
 });

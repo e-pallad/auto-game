@@ -39,7 +39,7 @@ Dependencies, all dev-only, pinned exactly, `package-lock.json` kept in the repo
 - **M0:** Inspected the environment and researched the market. Concept chosen: Floeline (see CONCEPT.md). Considered and rejected Godot because there are no export templates.
 - **M1/M2:** `src/core` holds the rules, BFS solver, generator, daily numbering, session and share text. Unit tests cover 365 consecutive dates: all solvable, all with par 7–11, none falling back to the handcrafted board.
 - **M3/M4:** The game is playable, built with Canvas, DOM menus and WebAudio. E2E caught a real bug: rAF timestamps lagged `performance.now()`, which made animation progress negative and threw `TypeError`. Fixed by clamping progress and using a single clock. Polish pass after reviewing screenshots: share wording, practice button layout, stranded dialog layout, no hints after a win.
-- **M5:** 32 unit tests and 9 e2e tests pass, and typecheck is clean. E2E runs against the production build served from the subpath `/play/floeline/`, which mirrors how itch.io hosts HTML5 games. It loads the build as a top-level page, not in an iframe, and uses real key presses, touch taps, mouse swipes and clicks. A final advisor review found three gaps: swipe and click input and Copy result had no test, and the result dialog focused a hidden button on practice wins and in the stranded state. All three were fixed and tested.
+- **M5:** 32 unit tests and 9 e2e tests pass (now 34 and 13 after the worker change), and typecheck is clean. E2E runs against the production build served from the subpath `/play/floeline/`, which mirrors how itch.io hosts HTML5 games. It loads the build as a top-level page, not in an iframe, and uses real key presses, touch taps, mouse swipes and clicks. A final advisor review found three gaps: swipe and click input and Copy result had no test, and the result dialog focused a hidden button on practice wins and in the stranded state. All three were fixed and tested.
 - **M6:** Baseline benchmark, then the improvement below.
 - **M7:** README, MARKETING.md, LICENSE, and an itch ZIP of 14 KB with 5 files.
 
@@ -102,11 +102,34 @@ The par distributions are identical before and after: easy mean 6.0, medium 9.1,
 
 **Improvement pass.** The biggest problem was the main thread freezing for up to 2.5 s while generating a Hard board at 4× throttle, roughly what a low-end phone would see. I rewrote the BFS solver to use typed-array state storage and an open-addressing hash set, with no per-node strings or objects, and kept the exact expansion order. Hard generation became about 4.5× faster in the browser at 4× throttle on both mean and max, and about 7–8× faster in Node. Daily boards are unchanged: an equivalence test checks this against the original solver, which is kept in `tests/unit/reference-solver.ts`.
 
+**Second improvement pass: a Web Worker for generation.**
+- **What changed:**
+  - `src/game/gen.worker.ts` runs `generate()` off the main thread.
+  - `src/game/generator-client.ts` falls back to generating on the main thread if `Worker` is missing, the worker script fails to load, or the worker crashes. Generation is deterministic, so both paths give the same board.
+  - `start()` is now asynchronous. Each request gets a token, so a reply that has been superseded, or that arrives after the player returns to the menu, is dropped.
+  - While a board loads, input is ignored, `#stage` has `aria-busy`, and a "Freezing the lake…" indicator appears if the load takes more than 150 ms.
+- **New metric:** the largest gap between animation frames while a board loads, measured at 4× CPU throttle on 20 boards each. A separate rAF monitor that doesn't touch the game takes the reading.
+
+| Max frame gap while loading (4× throttle) | Before (sync, `before-worker.json`) mean / worst | After (worker, `after-worker.json`) mean / worst |
+|---|---|---|
+| Medium practice board | 36.5 / 183.6 ms | 17.4 / 17.9 ms |
+| Hard practice board | 88.9 / 494.3 ms | 17.4 / 18.2 ms |
+
+About 17 ms is a single frame at 60 fps, so the page no longer stalls while generating.
+- **Caveats:**
+  - The `genMs*` fields in `after-worker.json` are measured inside the worker. CDP CPU throttling does not appear to apply to workers: their "4×" times match the unthrottled ones. So they don't show that a slow device generates faster. On a real phone the board still takes about as long to *arrive* as before, but the page stays responsive and shows the loading indicator.
+  - The bundle grew from 38.3 KB / 13.9 KB gzipped to 45.4 KB / 16.9 KB gzipped (5 files). The generator is now included twice: once in the worker chunk, and once in the main bundle for the fallback.
+  - A request that has been superseded still runs to completion in the worker before the next one starts. Terminating and respawning the worker would avoid that, but I haven't done it.
+- **Tests added:**
+  - Unit: the fallback client.
+  - e2e: the worker is actually used and gives the same board as Node; the fallback works when `Worker` is deleted and when the worker script is aborted; a newer request supersedes an older one; Menu cancels a load.
+  - To confirm the supersede test discriminates, I disabled the token check: the test then failed because the stale board was shown briefly.
+
 ## Risks and remaining work
 
 | Item | Status / next step |
 |---|---|
-| Hard boards can still block the main thread for about 0.5 s on slow devices | Next: move `generate()` into a Web Worker, or precompute daily boards |
+| Hard boards blocked the main thread for about 0.5 s on slow devices | ✅ Fixed in the second improvement pass below: generation now runs in a Web Worker |
 | Puzzle quality has not been validated with humans | Run a playtest with 5–10 players. Tune `DIFFICULTY` (par band, `minStrandings`) |
 | Timezone differences in daily puzzles | Documented; same approach as Wordle |
 | Share line has no URL | Add one once a permanent URL exists (`src/core/share.ts`) |
